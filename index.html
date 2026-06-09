@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ad Script Builder — Brand Brief to Veo-Ready Scripts</title>
+  <meta name="description" content="Transform your brand brief into scene-by-scene ad scripts structured for Google Veo generation. Instant, structured, production-ready." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="index.css" />
+</head>
+<body>
+  <!-- Ambient background blobs -->
+  <div class="ambient-bg">
+    <div class="blob blob-1"></div>
+    <div class="blob blob-2"></div>
+    <div class="blob blob-3"></div>
+  </div>
+
+  <header id="app-header">
+    <div class="header-inner">
+      <div class="logo">
+        <div class="logo-icon">
+          <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+            <rect x="2" y="2" width="24" height="24" rx="6" stroke="url(#logoGrad)" stroke-width="2.5"/>
+            <path d="M9 18V10L14 7L19 10V18L14 21L9 18Z" fill="url(#logoGrad)" opacity="0.85"/>
+            <defs>
+              <linearGradient id="logoGrad" x1="2" y1="2" x2="26" y2="26">
+                <stop stop-color="#a78bfa"/>
+                <stop offset="1" stop-color="#6366f1"/>
+              </linearGradient>
+            </defs>
+          </svg>
+        </div>
+        <span class="logo-text">Ad Script Builder</span>
+        <span class="logo-badge">for Veo</span>
+      </div>
+      <nav class="header-nav">
+        <a href="#input-section" class="nav-link active" data-section="input">Brief</a>
+        <a href="#output-section" class="nav-link" data-section="output">Script</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="app-main">
+    <!-- ==================== INPUT SECTION ==================== -->
+    <section id="input-section" class="section visible">
+      <div class="section-header">
+        <h1>Transform your brand brief into Veo-ready ad scripts</h1>
+        <p class="subtitle">Paste your raw brief or fill in the fields. We'll parse, plan, write, and validate — instantly.</p>
+      </div>
+
+      <div class="input-modes">
+        <button id="mode-raw" class="mode-btn active" type="button">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+          Paste Raw Brief
+        </button>
+        <button id="mode-fields" class="mode-btn" type="button">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/></svg>
+          Fill Fields
+        </button>
+      </div>
+
+      <!-- Raw Brief Mode -->
+      <div id="raw-mode" class="input-card glass">
+        <label for="raw-brief" class="field-label">Brand Brief</label>
+        <textarea id="raw-brief" class="textarea" rows="10" placeholder="Paste your brand brief here...&#10;&#10;Example:&#10;Brand: Aura Skincare&#10;Product: Hydrating Serum with Hyaluronic Acid — a lightweight daily serum that locks in 72-hour moisture.&#10;Price: $34.99&#10;Target Audience: Women 25–40, urban professionals who value clean beauty.&#10;Tone: Calm confidence — soft but assertive, like a whispered promise.&#10;Duration: 30 seconds"></textarea>
+        <div class="textarea-footer">
+          <span class="char-count" id="char-count">0 characters</span>
+          <button id="load-example" class="btn-ghost" type="button">Load Example</button>
+        </div>
+      </div>
+
+      <!-- Fields Mode -->
+      <div id="fields-mode" class="input-card glass" style="display:none;">
+        <div class="fields-grid">
+          <div class="field-group">
+            <label for="field-brand" class="field-label">Brand Name</label>
+            <input type="text" id="field-brand" class="input" placeholder="e.g. Aura Skincare" />
+          </div>
+          <div class="field-group">
+            <label for="field-price" class="field-label">Price</label>
+            <input type="text" id="field-price" class="input" placeholder="e.g. $34.99" />
+          </div>
+          <div class="field-group full-width">
+            <label for="field-product" class="field-label">Product Description</label>
+            <textarea id="field-product" class="textarea" rows="3" placeholder="e.g. Hydrating Serum with Hyaluronic Acid — a lightweight daily serum that locks in 72-hour moisture."></textarea>
+          </div>
+          <div class="field-group">
+            <label for="field-audience" class="field-label">Target Audience</label>
+            <input type="text" id="field-audience" class="input" placeholder="e.g. Women 25–40, urban professionals" />
+          </div>
+          <div class="field-group">
+            <label for="field-duration" class="field-label">Duration (seconds)</label>
+            <input type="number" id="field-duration" class="input" placeholder="e.g. 30" min="5" max="120" />
+          </div>
+          <div class="field-group full-width">
+            <label for="field-tone" class="field-label">Tone / Emotional Direction</label>
+            <textarea id="field-tone" class="textarea" rows="2" placeholder="e.g. Calm confidence — soft but assertive, like a whispered promise."></textarea>
+          </div>
+        </div>
+      </div>
+
+      <!-- AI Settings -->
+      <div class="ai-settings glass" id="ai-settings">
+        <button class="ai-settings-toggle" id="ai-settings-toggle" type="button">
+          <div class="ai-toggle-left">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+            <span>AI Script Generation</span>
+            <span class="ai-badge-required">Required</span>
+          </div>
+          <svg class="chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
+        <div class="ai-settings-body" id="ai-settings-body">
+          <p class="ai-settings-desc">Enter your Gemini API key to generate brand-specific ad scripts with AI. The key is stored locally in your browser only.</p>
+          <div class="field-group">
+            <label for="api-key" class="field-label">Gemini API Key</label>
+            <div class="api-key-row">
+              <input type="password" id="api-key" class="input" placeholder="AIza..." autocomplete="off" />
+              <button id="btn-toggle-key" class="btn-icon" type="button" title="Show/hide key">
+                <svg id="eye-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+              </button>
+            </div>
+          </div>
+          <div class="ai-settings-footer">
+            <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener" class="api-key-link">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+              Get a free Gemini API key
+            </a>
+            <div class="ai-footer-right">
+              <button id="btn-test-key" class="btn-ghost" type="button">Test Key</button>
+              <span class="api-status" id="api-status"></span>
+            </div>
+          </div>
+          <div id="api-diagnostic" class="api-diagnostic" style="display:none;"></div>
+        </div>
+      </div>
+
+      <!-- Generate Button -->
+      <div class="generate-area">
+        <button id="btn-generate" class="btn-primary" type="button">
+          <span class="btn-content">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+            Generate Ad Script
+          </span>
+          <span class="btn-loading" style="display:none;">
+            <span class="spinner"></span>
+            Generating with AI…
+          </span>
+        </button>
+      </div>
+    </section>
+
+    <!-- ==================== OUTPUT SECTION ==================== -->
+    <section id="output-section" class="section">
+      <!-- Pipeline Steps -->
+      <div id="pipeline" class="pipeline glass">
+        <div class="pipeline-step" data-step="parser">
+          <div class="step-icon">1</div>
+          <div class="step-info">
+            <span class="step-label">Brief Parser</span>
+            <span class="step-status">Waiting</span>
+          </div>
+        </div>
+        <div class="pipeline-connector"></div>
+        <div class="pipeline-step" data-step="planner">
+          <div class="step-icon">2</div>
+          <div class="step-info">
+            <span class="step-label">Scene Planner</span>
+            <span class="step-status">Waiting</span>
+          </div>
+        </div>
+        <div class="pipeline-connector"></div>
+        <div class="pipeline-step" data-step="voiceover">
+          <div class="step-icon">3</div>
+          <div class="step-info">
+            <span class="step-label">Voiceover Writer</span>
+            <span class="step-status">Waiting</span>
+          </div>
+        </div>
+        <div class="pipeline-connector"></div>
+        <div class="pipeline-step" data-step="veo">
+          <div class="step-icon">4</div>
+          <div class="step-info">
+            <span class="step-label">Veo Prompt Writer</span>
+            <span class="step-status">Waiting</span>
+          </div>
+        </div>
+        <div class="pipeline-connector"></div>
+        <div class="pipeline-step" data-step="validator">
+          <div class="step-icon">5</div>
+          <div class="step-info">
+            <span class="step-label">Validator</span>
+            <span class="step-status">Waiting</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Parsed Brief Summary -->
+      <div id="parsed-brief" class="parsed-brief glass" style="display:none;">
+        <h3 class="card-title">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+          Parsed Brief
+        </h3>
+        <div class="brief-chips" id="brief-chips"></div>
+      </div>
+
+      <!-- Validation Result -->
+      <div id="validation-result" class="validation-card" style="display:none;"></div>
+
+      <!-- Scene Cards -->
+      <div id="scene-cards" class="scene-cards"></div>
+
+      <!-- Actions -->
+      <div id="output-actions" class="output-actions" style="display:none;">
+        <button id="btn-copy" class="btn-secondary" type="button">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          Copy Script
+        </button>
+        <button id="btn-download" class="btn-secondary" type="button">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Download .txt
+        </button>
+        <button id="btn-new" class="btn-ghost" type="button">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          New Brief
+        </button>
+      </div>
+    </section>
+  </main>
+
+  <!-- Toast container -->
+  <div id="toast-container" class="toast-container"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>

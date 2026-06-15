@@ -41,8 +41,19 @@ const dom = {
   btnCopy: $('#btn-copy'),
   btnDownload: $('#btn-download'),
   btnNew: $('#btn-new'),
+  btnExportPdf: $('#btn-export-pdf'),
   navLinks: $$('.nav-link'),
   toastContainer: $('#toast-container'),
+  // New DOM references
+  btnHistory: $('#btn-history'),
+  historySidebar: $('#history-sidebar'),
+  btnCloseHistory: $('#btn-close-history'),
+  historyList: $('#history-list'),
+  sidebarOverlay: $('#sidebar-overlay'),
+  scenePlanner: $('#scene-planner'),
+  plannerTotalTime: $('#planner-total-time'),
+  plannerScenes: $('#planner-scenes'),
+  btnContinueAi: $('#btn-continue-ai'),
   // Field mode inputs
   fieldBrand: $('#field-brand'),
   fieldProduct: $('#field-product'),
@@ -91,6 +102,80 @@ function escapeHtml(text) {
   div.textContent = text;
   return div.innerHTML;
 }
+
+// ─── History Sidebar ──────────────────────────────
+function saveToHistory(brief, scenes, voiceovers, veoPrompts) {
+  const history = JSON.parse(localStorage.getItem('adscript_history') || '[]');
+  history.unshift({
+    id: Date.now().toString(),
+    date: new Date().toLocaleString(),
+    brief,
+    scenes,
+    voiceovers,
+    veoPrompts
+  });
+  if (history.length > 20) history.pop();
+  localStorage.setItem('adscript_history', JSON.stringify(history));
+  renderHistoryList();
+}
+
+function renderHistoryList() {
+  const history = JSON.parse(localStorage.getItem('adscript_history') || '[]');
+  if (history.length === 0) {
+    dom.historyList.innerHTML = '<div class="history-empty">No saved scripts yet.</div>';
+    return;
+  }
+  dom.historyList.innerHTML = history.map(item => `
+    <div class="history-item" data-id="${item.id}">
+      <div class="history-item-title">${escapeHtml(item.brief.brand || 'Untitled')} - ${escapeHtml(item.brief.durationRaw || item.brief.duration + 's')}</div>
+      <div class="history-item-date">${item.date}</div>
+    </div>
+  `).join('');
+
+  dom.historyList.querySelectorAll('.history-item').forEach(el => {
+    el.addEventListener('click', () => loadFromHistory(el.dataset.id));
+  });
+}
+
+function loadFromHistory(id) {
+  const history = JSON.parse(localStorage.getItem('adscript_history') || '[]');
+  const item = history.find(h => h.id === id);
+  if (!item) return;
+
+  dom.historySidebar.classList.remove('open');
+  dom.sidebarOverlay.classList.remove('open');
+  
+  switchSection('output');
+  resetPipelineUI();
+  
+  // Set pipeline steps to done
+  ['parser', 'planner', 'voiceover', 'veo', 'validator'].forEach(step => setStepState(step, 'done'));
+  $$('.pipeline-connector').forEach((c) => c.classList.add('filled'));
+
+  renderParsedBrief(item.brief);
+  const validation = validateScript(item.brief, item.scenes, item.voiceovers, item.veoPrompts);
+  renderValidation(validation);
+  renderScenes(item.brief, item.scenes, item.voiceovers, item.veoPrompts);
+  
+  generatedScript = buildScriptText(item.scenes, item.voiceovers, item.veoPrompts);
+  dom.outputActions.style.display = '';
+}
+
+dom.btnHistory.addEventListener('click', () => {
+  renderHistoryList();
+  dom.historySidebar.classList.add('open');
+  dom.sidebarOverlay.classList.add('open');
+});
+
+dom.btnCloseHistory.addEventListener('click', () => {
+  dom.historySidebar.classList.remove('open');
+  dom.sidebarOverlay.classList.remove('open');
+});
+
+dom.sidebarOverlay.addEventListener('click', () => {
+  dom.historySidebar.classList.remove('open');
+  dom.sidebarOverlay.classList.remove('open');
+});
 
 // ─── AI Settings Panel ──────────────────────────────
 // Load saved API key
@@ -695,6 +780,54 @@ function validateScript(brief, scenes, voiceovers, veoPrompts) {
   return { valid: errors.length === 0, errors, warnings };
 }
 
+async function callGeminiAPISingleScene(brief, scene, currentVoiceover, currentPrompt) {
+  const apiKey = dom.apiKey.value.trim();
+  if (!apiKey) throw new Error('API key missing.');
+
+  const userPrompt = `BRAND BRIEF:
+Brand Name: ${brief.brand}
+Product: ${brief.product}
+Target Audience: ${brief.audience}
+Tone: ${brief.tone}
+
+SCENE TO REGENERATE:
+Scene ${scene.number} [${scene.label}] — ${scene.duration}s
+
+Write a NEW voiceover and NEW Veo prompt for this specific scene. Do not repeat the exact previous ones.
+
+OUTPUT FORMAT: Return a valid JSON array with exactly ONE element, representing this scene.
+[ { "voiceover": "...", "veo_prompt": "..." } ]`;
+
+  const body = {
+    system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
+    contents: [ { role: 'user', parts: [{ text: userPrompt }] } ],
+    generationConfig: { temperature: 1.0, topP: 0.95, responseMimeType: 'application/json' },
+  };
+
+  for (const model of GEMINI_MODELS) {
+    try {
+      const res = await fetch(`${GEMINI_API_BASE}/${model}:generateContent?key=${apiKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+        let cleaned = text.trim();
+        if (cleaned.startsWith('\`\`\`')) {
+          cleaned = cleaned.replace(/^\`\`\`(?:json)?\s*/, '').replace(/\`\`\`\s*$/, '');
+        }
+        const parsed = JSON.parse(cleaned);
+        return parsed[0]; // { voiceover, veo_prompt }
+      }
+    } catch(e) {
+      console.warn('Error on model ' + model, e);
+    }
+  }
+  throw new Error("Could not regenerate scene.");
+}
+
 // ═══════════════════════════════════════════════════
 // PIPELINE ORCHESTRATOR
 // ═══════════════════════════════════════════════════
@@ -724,7 +857,7 @@ async function runPipeline() {
   switchSection('output');
   resetPipelineUI();
 
-  let brief, scenePlan, voiceovers, veoPrompts, validation;
+  let brief, scenePlan;
 
   try {
     // STEP 1: Parse
@@ -749,10 +882,79 @@ async function runPipeline() {
     if (scenePlan.error) throw new Error(scenePlan.error);
     setStepState('planner', 'done');
 
-    // STEPS 3 & 4: AI Generation (voiceover + veo prompts in one call)
+    // Show Manual Scene Planner
+    showScenePlanner(brief, scenePlan.scenes);
+
+  } catch (err) {
+    const steps = ['parser', 'planner'];
+    const activeStep = steps.find((s) => {
+      const el = $(`.pipeline-step[data-step="${s}"]`);
+      return el && el.classList.contains('active');
+    });
+    if (activeStep) setStepState(activeStep, 'error');
+    showToast(err.message, 'default');
+    console.error('Pipeline error:', err);
+  }
+}
+
+function showScenePlanner(brief, scenes) {
+  dom.scenePlanner.style.display = '';
+  
+  function renderPlanner() {
+    let total = scenes.reduce((sum, s) => sum + s.duration, 0);
+    dom.plannerTotalTime.textContent = `${total}s Total`;
+    if (total !== brief.duration) {
+      dom.plannerTotalTime.style.color = 'var(--error)';
+    } else {
+      dom.plannerTotalTime.style.color = 'var(--accent-secondary)';
+    }
+
+    dom.plannerScenes.innerHTML = scenes.map((s, i) => `
+      <div class="planner-scene-row">
+        <span class="scene-badge ${s.label}">${s.label}</span>
+        <span>Scene ${s.number}</span>
+        <input type="number" class="planner-scene-input" data-index="${i}" value="${s.duration}" min="1" max="120" />
+      </div>
+    `).join('');
+
+    dom.plannerScenes.querySelectorAll('.planner-scene-input').forEach(input => {
+      input.addEventListener('input', (e) => {
+        scenes[parseInt(e.target.dataset.index)].duration = parseInt(e.target.value) || 0;
+        let newTotal = scenes.reduce((sum, s) => sum + s.duration, 0);
+        dom.plannerTotalTime.textContent = `${newTotal}s Total`;
+        dom.plannerTotalTime.style.color = newTotal !== brief.duration ? 'var(--error)' : 'var(--accent-secondary)';
+      });
+    });
+  }
+
+  renderPlanner();
+
+  dom.btnContinueAi.onclick = async () => {
+    // Validate total
+    let total = scenes.reduce((sum, s) => sum + s.duration, 0);
+    if (total !== brief.duration) {
+      showToast(`Total duration is ${total}s, but brief requires ${brief.duration}s.`, 'default');
+      return;
+    }
+    
+    dom.scenePlanner.style.display = 'none';
+    dom.btnGenerate.querySelector('.btn-content').style.display = 'none';
+    dom.btnGenerate.querySelector('.btn-loading').style.display = '';
+    dom.btnGenerate.disabled = true;
+
+    await continueAIPipeline(brief, scenes);
+
+    dom.btnGenerate.querySelector('.btn-content').style.display = '';
+    dom.btnGenerate.querySelector('.btn-loading').style.display = 'none';
+    dom.btnGenerate.disabled = false;
+  };
+}
+
+async function continueAIPipeline(brief, scenes) {
+  let voiceovers, veoPrompts, validation;
+  try {
     setStepState('voiceover', 'active');
-    const aiResult = await callGeminiAPI(brief, scenePlan.scenes, (statusMsg) => {
-      // Update the pipeline UI with retry status
+    const aiResult = await callGeminiAPI(brief, scenes, (statusMsg) => {
       const el = $(`.pipeline-step[data-step="voiceover"] .step-status`);
       if (el) el.textContent = statusMsg;
     });
@@ -767,18 +969,20 @@ async function runPipeline() {
     // STEP 5: Validate
     setStepState('validator', 'active');
     await sleep(200);
-    validation = validateScript(brief, scenePlan.scenes, voiceovers, veoPrompts);
+    validation = validateScript(brief, scenes, voiceovers, veoPrompts);
     setStepState('validator', validation.valid ? 'done' : 'error');
     renderValidation(validation);
 
     $$('.pipeline-connector').forEach((c) => c.classList.add('filled'));
 
-    renderScenes(scenePlan.scenes, voiceovers, veoPrompts);
-    generatedScript = buildScriptText(scenePlan.scenes, voiceovers, veoPrompts);
+    renderScenes(brief, scenes, voiceovers, veoPrompts);
+    generatedScript = buildScriptText(scenes, voiceovers, veoPrompts);
     dom.outputActions.style.display = '';
+    
+    saveToHistory(brief, scenes, voiceovers, veoPrompts);
 
   } catch (err) {
-    const steps = ['parser', 'planner', 'voiceover', 'veo', 'validator'];
+    const steps = ['voiceover', 'veo', 'validator'];
     const activeStep = steps.find((s) => {
       const el = $(`.pipeline-step[data-step="${s}"]`);
       return el && el.classList.contains('active');
@@ -797,6 +1001,7 @@ function resetPipelineUI() {
   });
   $$('.pipeline-connector').forEach((c) => c.classList.remove('filled'));
   dom.parsedBrief.style.display = 'none';
+  dom.scenePlanner.style.display = 'none';
   dom.validationResult.style.display = 'none';
   dom.sceneCards.innerHTML = '';
   dom.outputActions.style.display = 'none';
@@ -857,7 +1062,7 @@ function renderValidation(validation) {
   }
 }
 
-function renderScenes(scenes, voiceovers, veoPrompts) {
+function renderScenes(brief, scenes, voiceovers, veoPrompts) {
   dom.sceneCards.innerHTML = '';
 
   scenes.forEach((scene, i) => {
@@ -872,7 +1077,17 @@ function renderScenes(scenes, voiceovers, veoPrompts) {
           <span class="scene-badge ${scene.label}">${scene.label}</span>
           <span class="scene-title">Scene ${scene.number}</span>
         </div>
-        <span class="scene-duration">${scene.duration}s</span>
+        <div style="display:flex; align-items:center; gap: 12px;">
+          <span class="scene-duration">${scene.duration}s</span>
+          <div class="scene-actions">
+            <button class="btn-icon-small btn-edit-scene" title="Edit text">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+            </button>
+            <button class="btn-icon-small btn-regen-scene" title="Regenerate with AI">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+            </button>
+          </div>
+        </div>
       </div>
       <div class="scene-card-body">
         <div class="scene-block">
@@ -880,17 +1095,68 @@ function renderScenes(scenes, voiceovers, veoPrompts) {
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
             Voiceover
           </div>
-          <div class="voiceover-text">"${escapeHtml(voiceovers[i])}"</div>
+          <div class="voiceover-text content-display">"${escapeHtml(voiceovers[i])}"</div>
+          <textarea class="scene-edit-textarea content-edit" style="display:none;">${voiceovers[i]}</textarea>
         </div>
         <div class="scene-block">
           <div class="scene-block-label">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
             Veo Prompt
           </div>
-          <div class="veo-prompt-text">${escapeHtml(veoPrompts[i])}</div>
+          <div class="veo-prompt-text content-display">${escapeHtml(veoPrompts[i])}</div>
+          <textarea class="scene-edit-textarea content-edit" style="display:none;">${veoPrompts[i]}</textarea>
         </div>
       </div>
     `;
+
+    const btnEdit = card.querySelector('.btn-edit-scene');
+    const displays = card.querySelectorAll('.content-display');
+    const edits = card.querySelectorAll('.content-edit');
+    let isEditing = false;
+
+    btnEdit.addEventListener('click', () => {
+      isEditing = !isEditing;
+      if (isEditing) {
+        displays.forEach(d => d.style.display = 'none');
+        edits.forEach(e => e.style.display = '');
+        btnEdit.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>`;
+      } else {
+        voiceovers[i] = edits[0].value;
+        veoPrompts[i] = edits[1].value;
+        displays[0].textContent = `"${voiceovers[i]}"`;
+        displays[1].textContent = veoPrompts[i];
+        displays.forEach(d => d.style.display = '');
+        edits.forEach(e => e.style.display = 'none');
+        btnEdit.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`;
+        generatedScript = buildScriptText(scenes, voiceovers, veoPrompts);
+      }
+    });
+
+    const btnRegen = card.querySelector('.btn-regen-scene');
+    btnRegen.addEventListener('click', async () => {
+      btnRegen.classList.add('spinner');
+      btnRegen.innerHTML = '';
+      try {
+        const res = await callGeminiAPISingleScene(brief, scene, voiceovers[i], veoPrompts[i]);
+        voiceovers[i] = res.voiceover;
+        veoPrompts[i] = res.veo_prompt;
+        displays[0].textContent = `"${voiceovers[i]}"`;
+        displays[1].textContent = veoPrompts[i];
+        edits[0].value = voiceovers[i];
+        edits[1].value = veoPrompts[i];
+        generatedScript = buildScriptText(scenes, voiceovers, veoPrompts);
+        
+        // Update history entry too if possible (for simplicity we might just let it be, 
+        // but let's re-save to history here so the latest reflects edits)
+        saveToHistory(brief, scenes, voiceovers, veoPrompts);
+
+        showToast(`Scene ${scene.number} regenerated!`, 'success');
+      } catch (err) {
+        showToast('Failed to regenerate: ' + err.message, 'error');
+      }
+      btnRegen.classList.remove('spinner');
+      btnRegen.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>`;
+    });
 
     dom.sceneCards.appendChild(card);
   });
@@ -938,6 +1204,58 @@ dom.btnDownload.addEventListener('click', () => {
   a.click();
   URL.revokeObjectURL(url);
   showToast('Downloading ad-script.txt', 'success');
+});
+
+dom.btnExportPdf.addEventListener('click', () => {
+  if (!generatedScript || typeof html2pdf === 'undefined') {
+    showToast('PDF Export is unavailable right now.', 'error');
+    return;
+  }
+  const element = document.createElement('div');
+  element.className = 'pdf-export-container';
+  
+  const history = JSON.parse(localStorage.getItem('adscript_history') || '[]');
+  const latest = history[0]; // the most recently generated or edited script
+  if (!latest) return;
+  
+  let html = `<div class="pdf-header">
+    <h1>${escapeHtml(latest.brief.brand || 'Ad Script')}</h1>
+    <p>Duration: ${latest.brief.duration}s | Tone: ${escapeHtml(latest.brief.tone || 'N/A')}</p>
+  </div>`;
+  
+  latest.scenes.forEach((scene, i) => {
+    html += `<div class="pdf-scene">
+      <div class="pdf-text">
+        <h3>Scene ${scene.number} [${scene.label}] - ${scene.duration}s</h3>
+        <p style="margin-top: 10px;"><strong>Voiceover:</strong><br/>"${escapeHtml(latest.voiceovers[i])}"</p>
+      </div>
+      <div class="pdf-visual">
+        <div style="padding: 20px; font-size: 12px; font-weight: normal; color: #555;">
+          <strong>Veo Prompt:</strong><br/>
+          ${escapeHtml(latest.veoPrompts[i])}
+        </div>
+      </div>
+    </div>`;
+  });
+  
+  element.innerHTML = html;
+  
+  // Apply inline styles to ensure PDF renders exactly as intended without full CSS mapping
+  element.style.padding = "40px";
+  element.style.background = "white";
+  element.style.color = "black";
+  element.style.fontFamily = "sans-serif";
+  element.style.width = "800px";
+
+  html2pdf().from(element).set({
+    margin: 15,
+    filename: 'ad-script-storyboard.pdf',
+    image: { type: 'jpeg', quality: 0.98 },
+    html2canvas: { scale: 2 },
+    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+  }).save().then(() => {
+    showToast('Exported PDF successfully', 'success');
+  });
 });
 
 dom.btnNew.addEventListener('click', () => {
